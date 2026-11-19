@@ -3,6 +3,19 @@
 基于 STM32G474 + DRV8340S 的三相无感 FOC 驱动。
 **核心特点：用线性观测器（Luenberger）替代滑模观测器（SMO），低速段性能显著更好。**
 
+> **TL;DR** — Hand-written **sensorless FOC** on **STM32G474 + DRV8340S**.
+> Uses a **linear (Luenberger) observer** instead of a sliding-mode observer.
+> Cost: a few dozen lines of float math — no lookup tables, no CORDIC, no vendor library.
+>
+> - Holds **closed-loop down to 1 rps (60 rpm)**, carrying load up to **40 rps (2400 rpm)**
+> - Angle error vs. an AS5600 magnetic encoder: **±3° @ 1 rps**
+>   (the same setup with an SMO: **±105°** — unusable below ~2 rps)
+> - 21.25 kHz current loop on a 170 MHz Cortex-M4, floats only
+> - All PI gains derived analytically (pole-zero cancellation + phase margin), not trial-and-error
+>
+> 中文一句话：用线性观测器把无感 FOC 的闭环下限从约 5 rps 拉到 **1 rps**，
+> 高速段带载到 **40 rps**；参数不是试出来的，是按零极点对消 + 相位裕度算出来的。
+
 ## 实测效果
 <img width="1248" height="575" alt="image" src="https://github.com/user-attachments/assets/00bafacf-1d2d-41e2-98ee-263120f8bb99" />
 
