@@ -23,3 +23,7 @@ _mxscratch/
 # ---- OS ----
 Thumbs.db
 .DS_Store
+
+# ---- JVM / CubeMX crash dumps ----
+hs_err_pid*.log
+replay_pid*.log
