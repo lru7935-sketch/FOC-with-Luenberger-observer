@@ -81,9 +81,9 @@ void Error_Handler(void);
 #define UB_GPIO_Port GPIOB
 #define UA_Pin GPIO_PIN_2
 #define UA_GPIO_Port GPIOB
-#define BOT_RECORD_Pin GPIO_PIN_10
-#define BOT_RECORD_GPIO_Port GPIOB
-#define BOT_RECORD_EXTI_IRQn EXTI15_10_IRQn
+#define BOT_BREAK_Pin GPIO_PIN_10
+#define BOT_BREAK_GPIO_Port GPIOB
+#define BOT_BREAK_EXTI_IRQn EXTI15_10_IRQn
 #define SOA_Pin GPIO_PIN_11
 #define SOA_GPIO_Port GPIOB
 #define SOB_Pin GPIO_PIN_12

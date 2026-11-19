@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #define M_TWOPI_F   6.28318530718f
+#define M_PI_F		3.14159265359f
 
 typedef struct
 {

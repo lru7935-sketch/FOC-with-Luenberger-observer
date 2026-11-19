@@ -59,5 +59,6 @@ void FOC_Usb_Task(void);                            /* 主循环里调用：无�
 void OL_Init(void);
 void PWM_Count_Start(void);
 void Foc_PID_Init(void);
+void Lbg_Para_Update(void);
 
 #endif /* __FOC_H_ */
