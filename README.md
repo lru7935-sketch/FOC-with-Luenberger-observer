@@ -4,6 +4,7 @@
 **核心特点：用线性观测器（Luenberger）替代滑模观测器（SMO），低速段性能显著更好。**
 
 ## 实测效果
+<img width="1248" height="575" alt="image" src="https://github.com/user-attachments/assets/00bafacf-1d2d-41e2-98ee-263120f8bb99" />
 
 | 项目 | 结果 |
 |---|---|
