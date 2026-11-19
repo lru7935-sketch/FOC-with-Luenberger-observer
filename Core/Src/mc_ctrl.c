@@ -18,33 +18,33 @@
 #include <stdlib.h>
 
 /***********************手动配置****************************** */
-const uint16_t DEAD_TIME = 700U;//700ns
+const uint16_t DEAD_TIME = 700U;//700ns，注意这里指的是实际死区时间（上管完全关断->下管完全打开），不是单片机这边配置的死区。
 
-const float PHASE_R     = 2.55f;
-const float PHASE_L     = 0.0009f;
+const float PHASE_R     = 2.55f;//相电阻
+const float PHASE_L     = 0.0009f;//相电感
 
-const float SAMPLE_RES = 0.1f;
-const float AMP_GAIN = 10.0f;
-const float VBUS_DIV=4.0f;
+const float SAMPLE_RES = 0.1f;//采样电阻，单位Ω
+const float AMP_GAIN = 10.0f;//CSA倍率
+const float VBUS_DIV=4.0f;//母线采样分压
 
-const float ADC_VREF = 3.3f;
-#define ADC_BUF_LEN 1
-const uint32_t ADC_FULL=4095;
-const float ADC_FRE = 42.5e6;
-const float ADC_CYCLE = 6.5f+12.5f;
+const float ADC_VREF = 3.3f;//ADC参考电压
+#define ADC_BUF_LEN 1//电流采样ADC缓冲区数组长度
+const uint32_t ADC_FULL=4095;//ADC量程12位
+const float ADC_FRE = 42.5e6;//ADC工作频率，单位hz
+const float ADC_CYCLE = 6.5f+12.5f;//ADC转换耗时，单位cycle，前一项是保持时间，后一项是转换时间，如果ADC是16位，改成“+16.5f”
 
-const float PWM_FRE = 21250.0f;
-const uint32_t PWM_ARR = (64000-1);
-const uint16_t PWM_CCR_MIN = 40;
+const float PWM_FRE = 21250.0f;//PWM频率
+const uint32_t PWM_ARR = (64000-1);//PWM自动重装值
+const uint16_t PWM_CCR_MIN = 40;//PWM最小比较值
 
-const float IN_LOOP_FRE = 21250.0f;
-const uint32_t IN_EX_DIV = 32;
+const float IN_LOOP_FRE = 21250.0f;//电流环频率
+const uint32_t IN_EX_DIV = 32;//内外环分频
 
-const float CL_TH = 1.0f;
-const float CL_ACCE = 60.0f;
+const float CL_TH = 1.0f;//切闭环阈值，单位rps
+const float CL_ACCE = 60.0f;//闭环最大加速度限制，如果负载比较大，这个值不是很重要，可以往大调
 
 /***********************自动计算****************************** */
-const uint32_t PWM_PERIOD = (uint32_t) 1e9/PWM_FRE;//ns
+const uint32_t PWM_PERIOD = (uint32_t) 1e9/PWM_FRE;//单位ns
 const float DEAD_RATIO = (float) DEAD_TIME/PWM_PERIOD;
 const float ADC_SAMPLE_RATIO = ADC_CYCLE*PWM_FRE*1.2f/ADC_FRE;//这里×1.2是给采样留一点余量
 const uint32_t ADC_Sample_Point = (uint32_t) PWM_ARR*(1.0f-ADC_SAMPLE_RATIO);
