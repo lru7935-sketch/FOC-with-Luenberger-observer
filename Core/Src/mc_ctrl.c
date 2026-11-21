@@ -23,7 +23,7 @@ const uint16_t DEAD_TIME = 700U;//700ns，注意这里指的是实际死区时�
 const float PHASE_R     = 2.55f;//相电阻
 const float PHASE_L     = 0.0009f;//相电感
 
-const float SAMPLE_RES = 0.1f;//采样电阻，单位Ω
+const float SAMPLE_RES = 0.01f;//采样电阻，单位Ω
 const float AMP_GAIN = 10.0f;//CSA倍率
 const float VBUS_DIV=4.0f;//母线采样分压
 
@@ -40,11 +40,11 @@ const uint16_t PWM_CCR_MIN = 40;//PWM最小比较值
 const float IN_LOOP_FRE = 21250.0f;//电流环频率internal_loop_frequency
 const uint32_t IN_EX_DIV = 32;//内外环分频internal_external_division
 
-const float CL_TH = 1.0f;//切闭环阈值close_loop_threshood，单位rps
+const float CL_TH = 4.0f;//切闭环阈值close_loop_threshood，单位rps
 const float CL_ACCE = 60.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调,负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
 
-const float OL_ACCE = 0.5f*CL_TH;//开环加速度open_loop_accelerate，单位rps，默认2s达到切闭环的阈值
-const float OL_Uq = 1.0f+0.5f*OL_ACCE;//开环的q轴电压，按需调整，这里给默认值
+const float OL_ACCE = 1.0f;//开环加速度open_loop_accelerate，单位rps/s
+const float OL_Uq = 2.0f;//开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持上面这个加速度
 
 /***********************自动计算****************************** */
 const uint32_t PWM_PERIOD = (uint32_t) 1e9/PWM_FRE;//单位ns
@@ -53,7 +53,7 @@ const float ADC_SAMPLE_RATIO = ADC_CYCLE*PWM_FRE*1.2f/ADC_FRE;//这里×1.2是�
 const uint32_t ADC_Sample_Point = (uint32_t) PWM_ARR*(1.0f-ADC_SAMPLE_RATIO);//采样位置
 const float EX_LOOP_FRE = IN_LOOP_FRE/IN_EX_DIV;//外环频率external_loop_frequency
 
-/***********************初始化参数，无需配置****************************** */
+/***********************初始化参数，无需配置*******************************/
 float Angle_q = 0.0f;
 float Omega_E = 0.0f;
 
@@ -82,10 +82,6 @@ static volatile uint16_t Adc_Buf_Vs[2];//第一个数据是母线电压采集，
 extern float Pll_Kp;
 extern float Pll_Ki;
 extern float Lbg_w0;
-
-//这里缓存三角函数，主要是为了避免重复计算，库三角函数运算需要很多cpu周期
-volatile float sin_Angle_q = 0.0f;
-volatile float cos_Angle_q = 0.0f;
 
 void MOTOR_Init(void)
 {
@@ -126,10 +122,11 @@ void Foc_PID_Init(void){
     const float IN_LOOP_ki     = PHASE_R*IN_LOOP_OMEGAc;
     const float IN_LOOP_dt     = 1.0f/IN_LOOP_FRE;
 
-    //SVPWM有效矢量最大为二分之根号三的母线，但是为保证采样质量，实际有效比例再×0.9，也就是允许合成出的矢量最大为78%的母线电压
+    //SVPWM有效矢量最大为二分之根号三的母线，但是为保证采样质量，实际有效比例再×0.85（根据自己的硬件调整，如果噪声大，采样不太行就改小一点，流出消隐时间）
+    //也就是允许合成出的矢量最大为73.6%的母线电压
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
-    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.9f;
-
+    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.85f;
+ 
     //PLL参数自适应，原理是设计二阶系统的阻尼比和带宽
     const float PLL_OMEGAn = IN_LOOP_OMEGAc/15.0f;//带宽直接选电流环带宽的1/15
     Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//这里把二阶系统的两个极点全部放到负实轴
@@ -190,27 +187,28 @@ void OL_Init(void){
 
 }
 
+    static float OL_Angle_q=0.0f;
+    static float OL_Speed=0.0f;
+
 void OL_Drv(void)
 {
-    static float OL_Angle=0.0f;
-    static float OL_Speed=0.0f;
 
     OL_Speed+=OL_ACCE/IN_LOOP_FRE;
 
-    OL_Angle+=OL_Speed*M_TWOPI_F*POLE_PAIRS/IN_LOOP_FRE;
+    OL_Angle_q+=OL_Speed*M_TWOPI_F*POLE_PAIRS/IN_LOOP_FRE;
 
-    if(OL_Angle>M_TWOPI_F)OL_Angle-=M_TWOPI_F;//归一化
-    if(OL_Angle<0)OL_Angle+=M_TWOPI_F;
+    if(OL_Angle_q>M_TWOPI_F)OL_Angle_q-=M_TWOPI_F;//归一化
+    if(OL_Angle_q<0)OL_Angle_q+=M_TWOPI_F;
 
     Foc_Udq.U_D=0.0f;
     Foc_Udq.U_Q=OL_Uq;
 
-    Foc_Uab=Arc_Park(Foc_Udq);
+    Foc_Uab=Arc_Park(Foc_Udq, sinf(OL_Angle_q), cosf(OL_Angle_q));
 
     if(Omega_E/(M_TWOPI_F*POLE_PAIRS)>=CL_TH)//如果PLL给出的速度已经超过阈值，直接跳出开环
     {
         OL_Cplt=1;
-        Ref_Iq = Foc_Idq.I_Q;//把电流承接，否则可能转矩波动很大
+        Ref_Iq = Foc_Idq.I_Q;//把电流承接，否则在第一次速度环来临之前一段时间内没有参考电流，可能会抖动
     }
 
 }
@@ -243,6 +241,11 @@ void Foc(void){
 
 }
 
+volatile float sin_Angle_q = 0.0f;
+volatile float cos_Angle_q = 0.0f;
+
+static Pll_Typedef Pll_Lbg = {0};
+
 void Foc_In_Loop(void)
 {
 
@@ -253,28 +256,24 @@ void Foc_In_Loop(void)
     Foc_Iab=Clark(Foc_Iabc);
 
     Lbg_Eab=Lbg(Foc_Uab, Foc_Iab);
-    
-    static Pll_Typedef Pll_Lbg = {0};
 
-    Lbg_Angle_q = Pll(Lbg_Eab, &Pll_Lbg, &Lbg_Omega_E);
+    Lbg_Angle_q = Pll(Lbg_Eab, &Pll_Lbg, &Lbg_Omega_E, sin_Angle_q, cos_Angle_q);
 
     Angle_q=Lbg_Angle_q;
 
     sin_Angle_q = sinf(Angle_q);
-    cos_Angle_q = cosf(Angle_q);
+    cos_Angle_q = cosf(Angle_q);//这里需要去计算，虽然下面开环的时候不需要park，但是pll需要该角度计算误差进行锁相
 
     Omega_E=Lbg_Omega_E;
     Foc_Eab=Lbg_Eab;
 
-    Lbg_Para_Update();
-
-    Foc_Idq=Park(Foc_Iab);
-
     if(OL_Cplt)
     {
+        Lbg_Para_Update();
+        Foc_Idq=Park(Foc_Iab, sin_Angle_q, cos_Angle_q);
         Foc_Udq.U_D=PID_Update(&Id_Pid, 0, Foc_Idq.I_D);
         Foc_Udq.U_Q=PID_Update(&Iq_Pid, Ref_Iq, Foc_Idq.I_Q);
-        Foc_Uab=Arc_Park(Foc_Udq);
+        Foc_Uab=Arc_Park(Foc_Udq, sin_Angle_q, cos_Angle_q);
     }
     else{
         OL_Drv();
@@ -305,7 +304,7 @@ void Foc_Ex_Loop(void)
         else if (Ref_Ramp > Ref_Speed) Ref_Ramp = fmaxf(Ref_Ramp - step, Ref_Speed);
 
         Ref_Iq = PID_Update(&Speed_Pid, Ref_Ramp, speed_fbk);
-
+        //Ref_Iq = 1.5f;
     }
 }
 

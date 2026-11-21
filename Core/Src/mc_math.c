@@ -2,9 +2,6 @@
 #include "math.h"
 #include <stdint.h>
 
-extern volatile float sin_Angle_q;
-extern volatile float cos_Angle_q;
-
 Iab_Typedef Clark(Iabc_Typedef Iabc)
 {
     Iab_Typedef Iab;
@@ -15,7 +12,7 @@ Iab_Typedef Clark(Iabc_Typedef Iabc)
     return Iab;
 }
 
-Idq_Typedef Park(Iab_Typedef Iab)
+Idq_Typedef Park(Iab_Typedef Iab, float sin_Angle_q, float cos_Angle_q)
 {
     Idq_Typedef Idq;
 
@@ -25,7 +22,7 @@ Idq_Typedef Park(Iab_Typedef Iab)
     return Idq;
 }
 
-Uab_Typedef Arc_Park(Udq_Typedef Udq)
+Uab_Typedef Arc_Park(Udq_Typedef Udq, float sin_Angle_q, float cos_Angle_q)
 {
     Uab_Typedef Uab;
 
@@ -111,7 +108,7 @@ Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab){
     float Pll_Kp = 350.0f;
     float Pll_Ki = 35000.0f;
 
-float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega)
+float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega, float sin_Angle_q, float cos_Angle_q)
 {
     float emf_abs = sqrtf(Eab.E_Alpha*Eab.E_Alpha + Eab.E_Beta*Eab.E_Beta);//计算模长，否则PLL参数无法保证全速域观测质量
     if (emf_abs < 0.001f) emf_abs = 0.001f;

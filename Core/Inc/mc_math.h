@@ -65,8 +65,8 @@ typedef struct
 Iab_Typedef Clark(Iabc_Typedef Iabc);
 Eab_Typedef Smo(Uab_Typedef Uab, Iab_Typedef Iab);
 Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab);
-float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega);
-Idq_Typedef Park(Iab_Typedef Iab);
-Uab_Typedef Arc_Park(Udq_Typedef Udq);
+float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega, float sin_Angle_q, float cos_Angle_q);
+Idq_Typedef Park(Iab_Typedef Iab, float sin_Angle_q, float cos_Angle_q);
+Uab_Typedef Arc_Park(Udq_Typedef Udq, float sin_Angle_q, float cos_Angle_q);
 CCR_Typedef SVPWM(Uab_Typedef Uab, float Vbus);
 CCR_Typedef SVPWM_Cps(Uab_Typedef Uab, float Vbus, Iabc_Typedef Iabc);
