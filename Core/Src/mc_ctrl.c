@@ -180,7 +180,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin)
 /*********************************开环***********************************/
 void OL_Init(void){
 
-    Foc_Uab.U_Beta=-1.0f;//这里是把q轴放到A相位置，d轴放到270°
+    Foc_Uab.U_Beta=-OL_Uq;//这里是把q轴放到A相位置，d轴放到270°
     Foc_Uab.U_Alpha=0;
 
     CCR_Typedef CCR=SVPWM(Foc_Uab, Get_Vbus());
