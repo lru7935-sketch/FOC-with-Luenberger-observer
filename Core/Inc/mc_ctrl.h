@@ -5,15 +5,6 @@
 #include "pid.h"
 #include "mc_math.h"
 
-/*============================================================================*/
-/*                        硬件与电机参数（换板子主要改这里）                  */
-/*============================================================================*/
-
-/*--------------------------------- 电流采样 ---------------------------------*/
-
-/*--------------------------------- 电机本体 ---------------------------------*/
-#define POLE_PAIRS          7               /* 极对数 */
-
 // #define GAIN_IA             0.994160f
 // #define OFFSET_IA           0.000000f
 // #define GAIN_IB             0.985899f
@@ -28,7 +19,8 @@
 #define GAIN_IC             1.0f            /* C 相增益校准 */
 #define OFFSET_IC           0.0f            /* C 相零漂校准，A */
 
-void MOTOR_Init(void);                      /* 外设、采样、控制器与 PWM 初始化 */
+void MOTOR_Init(void);
+void MOTOR_Start_Task(void);
 void Foc(void);
 void Foc_In_Loop(void);
 void Foc_Ex_Loop(void);

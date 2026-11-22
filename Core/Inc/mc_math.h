@@ -57,16 +57,20 @@ typedef struct
 /* mc_math.h */
 typedef struct
 {
-    float Angle_Q_Hat;
+    float Pll_Kp;
+    float Pll_Ki;
     float Pll_Inte;
     float Pll_Omega;
+    float Angle_q_Hat;
 } Pll_Typedef;
 
 Iab_Typedef Clark(Iabc_Typedef Iabc);
 Eab_Typedef Smo(Uab_Typedef Uab, Iab_Typedef Iab);
 Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab);
-float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega, float sin_Angle_q, float cos_Angle_q);
+float Pll(Eab_Typedef Eab, Pll_Typedef *p, float sin_Angle_q, float cos_Angle_q);
+void Pll_Reset(Pll_Typedef *p);
 Idq_Typedef Park(Iab_Typedef Iab, float sin_Angle_q, float cos_Angle_q);
 Uab_Typedef Arc_Park(Udq_Typedef Udq, float sin_Angle_q, float cos_Angle_q);
 CCR_Typedef SVPWM(Uab_Typedef Uab, float Vbus);
 CCR_Typedef SVPWM_Cps(Uab_Typedef Uab, float Vbus, Iabc_Typedef Iabc);
+void Cordic_Sin_Cos(float cordic_angle, float* cordic_sin, float* cordic_cos);

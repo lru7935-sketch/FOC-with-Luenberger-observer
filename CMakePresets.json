@@ -6,8 +6,16 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
-		    "toolchainFile": "${sourceDir}/cmake/starm-clang.cmake",
+            "toolchainFile": "${sourceDir}/cmake/starm-clang.cmake",
+            "cmakeExecutable": "C:/Users/15784/AppData/Local/stm32cube/bundles/cmake/4.3.1+st.1/bin/cmake.exe",
+            "environment": {
+                "PATH": "C:/Users/15784/AppData/Local/stm32cube/bundles/st-arm-clang/21.1.1+st.7/bin;C:/Users/15784/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin;$penv{PATH}"
+            },
             "cacheVariables": {
+                "CMAKE_MAKE_PROGRAM": "C:/Users/15784/AppData/Local/stm32cube/bundles/ninja/1.13.2+st.1/bin/ninja.exe",
+                "CMAKE_C_COMPILER": "C:/Users/15784/AppData/Local/stm32cube/bundles/st-arm-clang/21.1.1+st.7/bin/starm-clang.exe",
+                "CMAKE_CXX_COMPILER": "C:/Users/15784/AppData/Local/stm32cube/bundles/st-arm-clang/21.1.1+st.7/bin/starm-clang++.exe",
+                "CMAKE_ASM_COMPILER": "C:/Users/15784/AppData/Local/stm32cube/bundles/st-arm-clang/21.1.1+st.7/bin/starm-clang.exe"
             }
         },
         {

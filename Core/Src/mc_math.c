@@ -1,6 +1,7 @@
 #include "mc_math.h"
 #include "math.h"
 #include <stdint.h>
+#include "cordic.h"
 
 Iab_Typedef Clark(Iabc_Typedef Iabc)
 {
@@ -104,27 +105,35 @@ Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab){
 
 }
 
-/*************PLL锁相环*************/
-    float Pll_Kp = 350.0f;
-    float Pll_Ki = 35000.0f;
-
-float Pll(Eab_Typedef Eab, Pll_Typedef *p, float *Omega, float sin_Angle_q, float cos_Angle_q)
+float Pll(Eab_Typedef Eab, Pll_Typedef *p, float sin_Angle_q, float cos_Angle_q)
 {
     float emf_abs = sqrtf(Eab.E_Alpha*Eab.E_Alpha + Eab.E_Beta*Eab.E_Beta);//计算模长，否则PLL参数无法保证全速域观测质量
-    if (emf_abs < 0.001f) emf_abs = 0.001f;
+    if (emf_abs < 0.05f) emf_abs = 0.05f;   /* 50mV：低反电势时防止分母过小把噪声放大 */
 
-    const float err = -(Eab.E_Alpha*sin_Angle_q
-                        - Eab.E_Beta *cos_Angle_q) / emf_abs;//归一化误差
+    float err = -(Eab.E_Alpha*sin_Angle_q - Eab.E_Beta *cos_Angle_q) / emf_abs;//归一化误差
 
-    p->Pll_Inte  += err / IN_LOOP_FRE;
-    p->Pll_Omega  = Pll_Kp*err + Pll_Ki*p->Pll_Inte;
-    p->Angle_Q_Hat += p->Pll_Omega / IN_LOOP_FRE;
+    p->Pll_Inte += err / IN_LOOP_FRE;
 
-    if (p->Angle_Q_Hat > M_TWOPI_F) p->Angle_Q_Hat -= M_TWOPI_F;//归一化
-    if (p->Angle_Q_Hat < 0.0f)    p->Angle_Q_Hat += M_TWOPI_F;
+    const float Pll_p = p->Pll_Kp * err;
+    const float Pll_i = p->Pll_Ki * p->Pll_Inte;
 
-    *Omega = Pll_Ki * p->Pll_Inte;//这里返回角度误差的积分项，不要用PLL输出的角速度，抖动太大
-    return p->Angle_Q_Hat;
+    p->Pll_Omega  = Pll_p + Pll_i;
+
+    p->Angle_q_Hat += p->Pll_Omega / IN_LOOP_FRE;
+
+    if (p->Angle_q_Hat > M_TWOPI_F) p->Angle_q_Hat -= M_TWOPI_F;//归一化
+    if (p->Angle_q_Hat < 0.0f)    p->Angle_q_Hat += M_TWOPI_F;
+
+    return Pll_i;//这里返回角度误差的积分项，不要用PLL输出的角速度，抖动太大
+
+}
+
+void Pll_Reset(Pll_Typedef *p){
+
+    p->Pll_Inte    = 0.0f;
+    p->Pll_Omega   = 0.0f;
+    p->Angle_q_Hat = 0.0f;
+
 }
 
     extern const uint16_t PWM_ARR;
@@ -203,5 +212,22 @@ CCR_Typedef SVPWM_Cps(Uab_Typedef Uab, float Vbus, Iabc_Typedef Iabc)
     CCR.CCR_C=(uint16_t)(d_c * PWM_ARR);
 
     return CCR;
+
+}
+
+void Cordic_Sin_Cos(float cordic_angle, float* cordic_sin, float* cordic_cos){
+
+    /* q1.31：角度必须先折到 [-pi, pi)，再除以 pi */
+    float a = cordic_angle;
+    if (a > 3.14159265f)  a -= 6.28318531f;
+    if (a < -3.14159265f) a += 6.28318531f;
+
+    int32_t in  = (int32_t)(a * (2147483648.0f / 3.14159265f));
+    int32_t out[2] = {0, 0};
+
+    HAL_CORDIC_CalculateZO(&hcordic, &in, out, 1, 1);   /* ZO = zero overhead */
+
+    *cordic_cos = (float)out[0] * (1.0f / 2147483648.0f);
+    *cordic_sin = (float)out[1] * (1.0f / 2147483648.0f);
 
 }

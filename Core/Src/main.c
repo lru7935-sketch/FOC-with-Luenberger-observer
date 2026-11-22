@@ -128,6 +128,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    MOTOR_Start_Task();         /* 状态机：USB 指令到达后启动 PWM + 对齐 + 开环 */
     JF_Task();                  /* [AI] 鎶婄數娴佺幆鏁版嵁鎼粰 VOFA+锛圝ustFloat锛?*/
     FOC_Usb_Task();             /* [AI] 鍛戒护娌℃敹鍏ㄨ鏃讹紝400 ms 鍚庤嚜鍔ㄦ柇鍙?*/
 
