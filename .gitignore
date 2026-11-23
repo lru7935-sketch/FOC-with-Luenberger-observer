@@ -27,3 +27,7 @@ Thumbs.db
 # ---- JVM / CubeMX crash dumps ----
 hs_err_pid*.log
 replay_pid*.log
+
+# ---- local backups ----
+_bak_*/
+*.bak
