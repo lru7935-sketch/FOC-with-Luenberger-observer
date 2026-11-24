@@ -1,5 +1,4 @@
 #include "mc_ctrl.h"
-
 #include "adc.h"
 #include "drv8340s.h"
 #include "hrtim.h"
@@ -56,7 +55,7 @@ const float OL_ACCE = 1.0f; //开环加速度open_loop_accelerate，单位rps/s
 
 /*闭环参数*/
 const float CL_TH = 4.0f;   //切闭环阈值close_loop_threshood，单位rps
-const float CL_ACCE = 60.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调,负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
+const float CL_ACCE = 60.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调；负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
 
 
 /***********************自动计算*******************************/
@@ -67,7 +66,7 @@ const float DEAD_RATIO = (float) DEAD_TIME/PWM_PERIOD;
 
 const float ADC_SAMPLE_RATIO = ADC_CYCLE*PWM_FRE*1.2f/ADC_FRE;//这里×1.2是给采样留一点余量
 
-const uint32_t ADC_Sample_Point = (uint32_t) PWM_ARR*(1.0f-ADC_SAMPLE_RATIO);//采样位置
+const uint16_t ADC_Sample_Point_Max = (uint16_t) PWM_ARR*(1.0f-ADC_SAMPLE_RATIO);//采样位置
 
 const float EX_LOOP_FRE = IN_LOOP_FRE/IN_EX_DIV;//外环频率external_loop_frequency
 
@@ -76,11 +75,11 @@ const float Speed_Step = CL_ACCE / EX_LOOP_FRE;//限制最大加速度
 /***********************初始化参数，无需配置*******************************/
 
 /***************状态机*****************/
+
 /*
 基本过程是Init_Cplt在初始化之后置1，然后允许判断Foc_EN，在用户发不等于0的数之后置1，再判断Zero_Cplt
 Zero_Cplt如果是0，不会进入旋转状态。主循环判断Init_Cplt完成Foc_EN=1且为对齐时进行对齐，再把Zero_Cplt置1
 最后进入强拖，到达阈值之后切闭环。如果用户发送0，则会关闭PWM，并将系统复位
-
 */
 
 volatile uint8_t Init_Cplt = 0;
@@ -97,7 +96,11 @@ static float OL_Angle_q = 0.0f;
 static float Speed =0.0f;       static float Omega_E = 0.0f;
 static float Angle_q = 0.0f;    static float sin_Angle_q = 0.0f;    static float cos_Angle_q = 0.0f;
 
-static float Ref_Speed = 0.0f;//参考加速度，由外界给定，到达闭环以后，如果给的参考速度小于阈值，会把速度保持在阈值
+static float Ref_Speed = 0.0f;
+static volatile uint32_t Isr_Cyc_Max = 0U;
+static volatile uint32_t Isr_Cyc_Sum = 0U;
+static volatile uint32_t Isr_Cyc_Cnt = 0U;
+static volatile float Id_Ref = 0.0f;   /* Id axis current reference: USB sends "speed,Id" *///参考加速度，由外界给定，到达闭环以后，如果给的参考速度小于阈值，会把速度保持在阈值
 static float Ref_Ramp = 0.0f;//速度备份,用于斜坡响应参考值
 static float Ref_Iq = 0.0f;//q轴参考电流，由速度环给定
 
@@ -172,7 +175,7 @@ void MOTOR_Init(void)
     PWM_Count_Start();//先打开计数，如果不开的话ADC没法触发（对于STM32G4的HRTIM是这样的）
     //打开的话中断也会同时触发，由于我们还未初始化完成，这里使用Init_Cplt这个变量先屏蔽中断内容
 
-    ADC_Set_Sample_Point(ADC_Sample_Point);
+    ADC_Set_Sample_Point(ADC_Sample_Point_Max);
     HAL_ADC_Start_DMA(&hadc4, (uint32_t *)Adc_Buf_Vs, 2);//先把母线电压采集打开，下面初始化代码中如果发现母线欠压就不会继续运行
 
     HAL_Delay(20U);
@@ -186,6 +189,8 @@ void MOTOR_Init(void)
 
     Foc_PID_Init();//注意，这里面绝大多数参数会自己运算，除了速度环，因此建议自己调试速度环
 
+    /* TIM2: 10 MHz free running, 1 tick = 100 ns, used for ISR timing */
+    HAL_TIM_Base_Start(&htim2);
     Init_Cplt = 1;
 }
 
@@ -201,10 +206,10 @@ void Foc_PID_Init(void){
     const float IN_LOOP_ki     = PHASE_R*IN_LOOP_OMEGAc;
     const float IN_LOOP_dt     = 1.0f/IN_LOOP_FRE;
 
-    //SVPWM有效矢量最大为二分之根号三的母线，但是为保证采样质量，实际有效比例再×0.9（根据自己的硬件调整，如果噪声大，采样不太行就改小一点，流出消隐时间）
+    //SVPWM有效矢量最大为二分之根号三的母线，但是为保证采样质量，实际有效比例再×0.8（根据自己的硬件调整，如果噪声大，采样不太行就改小一点，流出消隐时间）
     //也就是允许合成出的矢量最大为73.6%的母线电压
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
-    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.9f;
+    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
  
     //PLL参数自适应，原理是设计二阶系统的阻尼比和带宽
     const float PLL_OMEGAn = IN_LOOP_OMEGAc/15.0f;//带宽直接选电流环带宽的1/15
@@ -269,11 +274,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin)
     if (gpio_pin == DRV_FAULT_PIN)//故障，直接让驱动芯片休眠即可
     {
         DRV_Fault_Flag = 1U;
-        PWM_Stop_ALL();
+        Foc_EN=0;
     }
     if (gpio_pin == BOT_BREAK_Pin)//用户手动刹车按键，如果没有，删掉这部分回调即可
     {
-        PWM_Stop_ALL();
+        Foc_EN=0;
     }
 }
 
@@ -314,20 +319,24 @@ void OL_Drv(void)
 
 void Foc(void){
 
+    const uint32_t _isr_t0 = TIM2->CNT;
+
     Foc_In_Loop();//执行电流环
 
 
     JF_Push(Foc_Iabc.I_A, Foc_Iabc.I_B, Foc_Iabc.I_C,
-            Speed, Foc_Idq.I_Q, Ref_Speed);//通过usbCDC打印数据
+            Speed, Foc_Idq.I_D, Foc_Idq.I_Q);//通过usbCDC打印数据
 
     if(++Ex_Cnt<IN_EX_DIV)
     {
+        { uint32_t _d = TIM2->CNT - _isr_t0; Isr_Cyc_Sum += _d; Isr_Cyc_Cnt++; if(_d > Isr_Cyc_Max) Isr_Cyc_Max = _d; }
         return;
     }
     else{
         Foc_Ex_Loop();
         Ex_Cnt=0;
     }
+    { uint32_t _d = TIM2->CNT - _isr_t0; Isr_Cyc_Sum += _d; Isr_Cyc_Cnt++; if(_d > Isr_Cyc_Max) Isr_Cyc_Max = _d; }
 
 }
 
@@ -354,7 +363,7 @@ void Foc_In_Loop(void)
 
     if(OL_Cplt)
     {
-        Foc_Udq.U_D = PID_Update(&Id_Pid, 0, Foc_Idq.I_D);
+        Foc_Udq.U_D = PID_Update(&Id_Pid, Id_Ref, Foc_Idq.I_D);
         Foc_Udq.U_Q = PID_Update(&Iq_Pid, Ref_Iq, Foc_Idq.I_Q);
 
         float Angle_q_Cps = Angle_q + Omega_E*1.5f/IN_LOOP_FRE;
@@ -374,13 +383,19 @@ void Foc_In_Loop(void)
         if(Speed>=CL_TH)//如果PLL给出的速度已经超过阈值，直接跳出开环
         {
             OL_Cplt = 1;
-            Ref_Iq  = Foc_Idq.I_Q * 0.2f;
             Ref_Ramp = Speed;
-            Speed_Pid.Inte = Ref_Iq/Speed_Pid.Ki;
+            Speed_Pid.Inte = Speed * Speed_Pid.Kp /Speed_Pid.Ki;
         }
 
     }
     CCR_Typedef CCR=SVPWM(Foc_Uab, Get_Vbus());
+
+    uint16_t m1 = (CCR.CCR_A > CCR.CCR_B) ? CCR.CCR_A : CCR.CCR_B;
+    uint16_t CCR_Max = (m1 > CCR.CCR_C) ? m1 : CCR.CCR_C;
+    uint32_t ADC_Sample_Point = (uint32_t) (CCR_Max + PWM_ARR) / 2;
+    
+    ADC_Set_Sample_Point((uint16_t) ADC_Sample_Point);
+    
     PWM_CCR_ALL(CCR);
 
 }
@@ -494,9 +509,9 @@ uint16_t ADC_Get_Tem(void)
 
 void ADC_Set_Sample_Point(uint16_t samp)
 {
-    if (samp > PWM_ARR)
+    if (samp > ADC_Sample_Point_Max)
     {
-        samp = PWM_ARR;
+        samp = ADC_Sample_Point_Max;
     }
 
     __HAL_HRTIM_SETCOMPARE(&hhrtim1, HRTIM_TIMERINDEX_MASTER, HRTIM_COMPAREUNIT_4, samp);
@@ -652,7 +667,60 @@ static void FOC_Usb_Parse(void)
 
     Usb_Line[Usb_Len] = 0;
 
+        /* ---- SERIES_L_TEST: A half bridge PWM, B low side always on, C floating ----
+       USB: "L<percent>" e.g. L2 , L5 , L0
+       Current path: Vbus -> A high side -> A winding -> B winding -> B low side -> shunt B
+       Measures 2 x L_phase. C outputs are disabled so nothing shunts the current. */
+    if (Usb_Line[0] == 'c' || Usb_Line[0] == 'C')
+    {
+        char _b[96];
+        uint32_t mx = Isr_Cyc_Max, av = (Isr_Cyc_Cnt ? (Isr_Cyc_Sum / Isr_Cyc_Cnt) : 0U), nn = Isr_Cyc_Cnt;
+        int _k = sprintf(_b, "max=%lutick %lu.%luus avg=%lutick %lu.%luus n=%lu\r\n",
+            (unsigned long)mx, (unsigned long)(mx/10U), (unsigned long)(mx%10U),
+            (unsigned long)av, (unsigned long)(av/10U), (unsigned long)(av%10U),
+            (unsigned long)nn);
+        CDC_Transmit_FS((uint8_t*)_b, (uint16_t)_k);
+        Isr_Cyc_Max = 0U; Isr_Cyc_Sum = 0U; Isr_Cyc_Cnt = 0U;
+        return;
+    }    if (Usb_Line[0] == 'l' || Usb_Line[0] == 'L')
+    {
+        const float d_pct = strtof(&Usb_Line[1], &end);
+        CCR_Typedef cl;
+        const uint32_t cc = (uint32_t)((float)PWM_ARR * (d_pct / 100.0f));
+        Init_Cplt = 0;                  /* ISR does nothing */
+        Foc_EN    = 0;
+        PWM_Stop_ALL();
+        PWM_Start_ALL();
+        /* disable C phase outputs -> high impedance */
+        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TC1 | HRTIM_OUTPUT_TC2);
+        PWM_Count_Start();
+        cl.CCR_A = (uint16_t)cc;        /* A: PWM */
+        cl.CCR_B = 0;                   /* B: high side 0% -> low side always on */
+        cl.CCR_C = 0;
+        PWM_CCR_ALL(cl);
+        return;
+    }
+    /* ---- SHUNT_TEST: fixed-duty injection for scope measurement ----
+       USB: "t<percent>" e.g. t2 , t10 , t0
+       A and B leg at <percent> duty, C leg at 0. FOC ISR is disabled so
+       the duties stay fixed. Power-cycle or re-flash to exit this mode. */
+    if (Usb_Line[0] == 't' || Usb_Line[0] == 'T')
+    {
+        const float d_pct = strtof(&Usb_Line[1], &end);
+        CCR_Typedef cr;
+        const uint32_t ccr = (uint32_t)((float)PWM_ARR * (d_pct / 100.0f));
+        Init_Cplt = 0;                  /* ISR does nothing now */
+        Foc_EN    = 0;
+        PWM_Start_ALL();
+        PWM_Count_Start();
+        cr.CCR_A = (uint16_t)ccr;
+        cr.CCR_B = (uint16_t)ccr;
+        cr.CCR_C = 0;
+        PWM_CCR_ALL(cr);
+        return;
+    }
     Ref_Speed = strtof(Usb_Line, &end);
+    if (*end == ',' || *end == ';' || *end == ' ') { Id_Ref = strtof(end + 1, &end); }
 
     if(Ref_Speed==0){
         Foc_EN = 0;
