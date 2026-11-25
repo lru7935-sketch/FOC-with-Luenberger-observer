@@ -212,9 +212,9 @@ void Foc_PID_Init(void){
     const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
  
     //PLL参数自适应，原理是设计二阶系统的阻尼比和带宽
-    const float PLL_OMEGAn = IN_LOOP_OMEGAc/15.0f;//带宽直接选电流环带宽的1/15
+    const float PLL_OMEGAn = Lbg_w0/20.0f;//PLL 带宽挂观测器，不再挂电流环
     Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//这里把二阶系统的两个极点全部放到负实轴
-    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.95f;//阻尼比直接选经验值0.95
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.707f;//阻尼比 0.707
 
     PID_Init(&Iq_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
     PID_Init(&Id_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
@@ -417,7 +417,7 @@ void Lbg_Para_Update(void){
 
     Lbg_w0=20.0f*Omega_E;//带宽选择20倍电角速度
     if(Lbg_w0<1000.0f)Lbg_w0=1000.0f;
-    if(Lbg_w0>10000.0f)Lbg_w0=10000.0f;
+    if(Lbg_w0>50000.0f)Lbg_w0=50000.0f;
 
 }
 

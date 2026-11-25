@@ -91,11 +91,25 @@ Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab){
     const float Lbg_K1 = 2.0f*Lbg_w0 - PHASE_R/PHASE_L;
     const float Lbg_K2 = -PHASE_L * Lbg_w0 * Lbg_w0;
 
-    I_Alpha_Hat += (Uab.U_Alpha - PHASE_R*I_Alpha_Hat - E_Alpha)/PHASE_L/IN_LOOP_FRE + Lbg_K1*(Iab.I_Alpha - I_Alpha_Hat)/IN_LOOP_FRE;
-    I_Beta_Hat  += (Uab.U_Beta  - PHASE_R*I_Beta_Hat  - E_Beta )/PHASE_L/IN_LOOP_FRE + Lbg_K1*(Iab.I_Beta  - I_Beta_Hat )/IN_LOOP_FRE;
+    /* 误差只算一次：先算误差，再同步更新电流和反电势。
+       以前是"半隐式"（先更新电流、再用新电流算 E 的误差），
+       会让实际极点与设计不符，高速时角度误差偏大。 */
+    float err_alpha = Iab.I_Alpha - I_Alpha_Hat;
+    float err_beta  = Iab.I_Beta  - I_Beta_Hat;
 
-    E_Alpha += Lbg_K2*(Iab.I_Alpha - I_Alpha_Hat)/IN_LOOP_FRE;
-    E_Beta  += Lbg_K2*(Iab.I_Beta  - I_Beta_Hat )/IN_LOOP_FRE;
+    float dI_alpha = (Uab.U_Alpha - PHASE_R * I_Alpha_Hat - E_Alpha)
+                   / PHASE_L + Lbg_K1 * err_alpha;
+    float dI_beta  = (Uab.U_Beta  - PHASE_R * I_Beta_Hat  - E_Beta)
+                   / PHASE_L + Lbg_K1 * err_beta;
+
+    float dE_alpha = Lbg_K2 * err_alpha;
+    float dE_beta  = Lbg_K2 * err_beta;
+
+    I_Alpha_Hat += dI_alpha / IN_LOOP_FRE;
+    I_Beta_Hat  += dI_beta  / IN_LOOP_FRE;
+
+    E_Alpha += dE_alpha / IN_LOOP_FRE;
+    E_Beta  += dE_beta  / IN_LOOP_FRE;
 
     Eab_Typedef Eab;
     Eab.E_Alpha=E_Alpha;
