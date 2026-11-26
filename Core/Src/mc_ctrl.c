@@ -120,7 +120,7 @@ static volatile uint16_t Adc_Buf_B[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_C[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_Vs[2];//索引0是热敏电阻温度，索引1是母线电压；本代码不处理温度，忽略索引0即可
 
-float Lbg_w0 = 4000.0f;
+float Lbg_w0 = 4000.0f;//不用改，下面会自适应
 
 void Foc_Vari_Reset(void){
 
@@ -190,13 +190,17 @@ void MOTOR_Init(void)
 
 void Foc_PID_Init(void){
 
-    //内环PI参数自适应，原理为零极点对消
+    //内环PI参数自适应，零极点对消
     const float IN_LOOP_Td     = 1.5f*1.0f/IN_LOOP_FRE;//延迟等于1.5个控制周期
-    //拿到延迟以后，配置相位裕度
+
     const float Current_Loop_OmegaBW = M_TWOPI_F * PWM_FRE / 25.0f;
+
     const float OmegaBW_mlp_Td = Current_Loop_OmegaBW*IN_LOOP_Td;
+
     float sin_OmegaBW_mlp_Td,cos_OmegaBW_mlp_Td;
+
     Cordic_Sin_Cos(OmegaBW_mlp_Td, &sin_OmegaBW_mlp_Td, &cos_OmegaBW_mlp_Td);
+
     const float IN_LOOP_OmegaC = sqrtf(((Current_Loop_OmegaBW - sin_OmegaBW_mlp_Td)*(Current_Loop_OmegaBW - sin_OmegaBW_mlp_Td))
     /(2.0f-cos_OmegaBW_mlp_Td*cos_OmegaBW_mlp_Td));
 
@@ -209,10 +213,10 @@ void Foc_PID_Init(void){
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
     const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
  
-    //PLL参数自适应，原理是设计二阶系统的阻尼比和带宽
-    const float PLL_OMEGAn = Lbg_w0/20.0f;//PLL 自然频率取观测器带宽的 1/20
-    Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²，决定 PLL 带宽
-    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.707f;//Kp = 2ζωn，阻尼比取 0.707
+    //PLL 参数初始化：ωn 取观测器带宽的 1/5，ζ=1（Lbg_Para_Update 每拍会刷新）
+    const float PLL_OMEGAn = Lbg_w0/5.0f;
+    Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;//Kp = 2ζωn，ζ=1
 
     PID_Init(&Iq_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
     PID_Init(&Id_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
@@ -351,7 +355,7 @@ void Foc_In_Loop(void)
 
     Cordic_Sin_Cos(Angle_q, &sin_Angle_q, &cos_Angle_q);
 
-    Lbg_Para_Update();      /* 每拍更新观测器带宽：开环期间也跟随转速，避免切闭环时带宽突变 */
+    Lbg_Para_Update();      /* 每拍更新观测器带宽与 PLL 增益：开环期间也跟随转速，避免切闭环时参数突变 */
 
     Foc_Idq = Park(Foc_Iab, sin_Angle_q, cos_Angle_q);   /* 开环期间也算，切换时 Iq 才是最新值 */
 
@@ -411,7 +415,12 @@ void Lbg_Para_Update(void){
 
     Lbg_w0=20.0f*Omega_E;//带宽选择20倍电角速度
     if(Lbg_w0<1000.0f)Lbg_w0=1000.0f;
-    if(Lbg_w0>50000.0f)Lbg_w0=50000.0f;
+    if(Lbg_w0>80000.0f)Lbg_w0=80000.0f;
+
+    //PLL 参数随笔速自适应：ωn = Lbg_w0/5，ζ=1
+    const float PLL_OMEGAn = Lbg_w0/5.0f;
+    Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;//Kp = 2ζωn，ζ=1
 
 }
 
