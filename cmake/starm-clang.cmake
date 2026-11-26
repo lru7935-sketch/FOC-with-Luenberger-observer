@@ -3,16 +3,17 @@ set(CMAKE_SYSTEM_PROCESSOR          arm)
 
 set(CMAKE_C_COMPILER_ID Clang)
 set(CMAKE_CXX_COMPILER_ID Clang)
+set(TOOLCHAIN_PREFIX                "C:/Users/15784/AppData/Local/stm32cube/bundles/st-arm-clang/21.1.1+st.7/bin/starm-")
+
+set(CMAKE_C_COMPILER                "${TOOLCHAIN_PREFIX}clang.exe")
+set(CMAKE_ASM_COMPILER              "${CMAKE_C_COMPILER}")
+set(CMAKE_CXX_COMPILER              "${TOOLCHAIN_PREFIX}clang++.exe")
+set(CMAKE_LINKER                    "${TOOLCHAIN_PREFIX}clang.exe")
+set(CMAKE_OBJCOPY                   "${TOOLCHAIN_PREFIX}objcopy.exe")
+set(CMAKE_SIZE                      "${TOOLCHAIN_PREFIX}size.exe")
+
 
 # Some default llvm settings
-set(TOOLCHAIN_PREFIX                starm-)
-
-set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}clang)
-set(CMAKE_ASM_COMPILER              ${CMAKE_C_COMPILER})
-set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}clang++)
-set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}clang)
-set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
-set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
 
 set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")
 set(CMAKE_EXECUTABLE_SUFFIX_C       ".elf")

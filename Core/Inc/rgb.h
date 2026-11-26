@@ -19,7 +19,7 @@
 #define RGB_TIM              htim3              /* 输出所用定时器 */
 #define RGB_CHANNEL          TIM_CHANNEL_2      /* 输出所用通道 */
 #define RGB_BUF_LEN          260                /* DMA 缓冲长度 */
-/* 编码方式：PWM 周期 1200 ns（17 分频，ARR = 12）
+/* 编码方式：PWM 周期 1200 ns（17 分频，ARR = 11，即周期 12 个计数）
  *   1 码 -> 比较值 6（高电平 600 ns）
  *   0 码 -> 比较值 3（高电平 300 ns）
  * 缓冲末尾 236 个 0 构成 283.2 µs 低电平复位帧，整帧 260 * 1.2 µs = 312 µs */

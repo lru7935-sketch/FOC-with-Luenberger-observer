@@ -4,6 +4,7 @@
   * @brief   printf 重定向到 USB CDC（发送 FIFO + 手动 flush）
   * @note    __io_putchar() 只往环形 FIFO 里塞，不阻塞；
   *          USB_Printf_Flush() 负责往 CDC 端点搬，忙就下次再搬。
+  *          注意：工程里目前没有调用 USB_Printf_Flush()，printf 内容会一直留在 FIFO。
   ******************************************************************************
   */
 

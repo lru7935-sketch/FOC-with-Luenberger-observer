@@ -81,7 +81,7 @@ void DRV_Init(Drv_Mode_Typedef mode)
 {
     Work_Mode = mode;
 
-    HAL_NVIC_DisableIRQ(EXTI2_IRQn);//先忽略一下故障，防止初始化过程中意外进故障中断把芯片失能了。
+    HAL_NVIC_DisableIRQ(EXTI2_IRQn);//先屏蔽故障中断，避免初始化过程中误触发导致 Foc_EN 被清零
 
     /* 母线电压没建起来之前不往下走 */
     while (Get_Vbus() < DRV_UVLO)

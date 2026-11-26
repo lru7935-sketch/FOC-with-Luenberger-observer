@@ -128,8 +128,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    JF_Task();                  /* [AI] 鎶婄數娴佺幆鏁版嵁鎼粰 VOFA+锛圝ustFloat锛?*/
-    FOC_Usb_Task();             /* [AI] 鍛戒护娌℃敹鍏ㄨ鏃讹紝400 ms 鍚庤嚜鍔ㄦ柇鍙?*/
+    MOTOR_Start_Task();
+    JF_Task();                  
+    FOC_Usb_Task();             
 
   }
     /* USER CODE END WHILE */

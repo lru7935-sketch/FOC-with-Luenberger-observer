@@ -45,7 +45,8 @@ add_executable(${CMAKE_PROJECT_NAME}
     Core/Src/pid.c
     Core/Inc/pid.h
 
-    # 鐢垫満鎺у埗鍒嗗眰锛堣嚜宸卞線閲屽啓锛?    Core/Inc/mc_math.h
+    # 电机控制分层（自己往里写）
+    Core/Inc/mc_math.h
     Core/Src/mc_math.c
     Core/Inc/mc_ctrl.h
     Core/Src/mc_ctrl.c

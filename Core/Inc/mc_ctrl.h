@@ -5,15 +5,6 @@
 #include "pid.h"
 #include "mc_math.h"
 
-/*============================================================================*/
-/*                        硬件与电机参数（换板子主要改这里）                  */
-/*============================================================================*/
-
-/*--------------------------------- 电流采样 ---------------------------------*/
-
-/*--------------------------------- 电机本体 ---------------------------------*/
-#define POLE_PAIRS          7               /* 极对数 */
-
 // #define GAIN_IA             0.994160f
 // #define OFFSET_IA           0.000000f
 // #define GAIN_IB             0.985899f
@@ -28,7 +19,8 @@
 #define GAIN_IC             1.0f            /* C 相增益校准 */
 #define OFFSET_IC           0.0f            /* C 相零漂校准，A */
 
-void MOTOR_Init(void);                      /* 外设、采样、控制器与 PWM 初始化 */
+void MOTOR_Init(void);
+void MOTOR_Start_Task(void);
 void Foc(void);
 void Foc_In_Loop(void);
 void Foc_Ex_Loop(void);
@@ -54,8 +46,8 @@ void PWM_CCR_C(uint16_t comp);
 void PWM_CCR_ALL(CCR_Typedef CCR);
 void PWM_Start_ALL(void);
 void PWM_Stop_ALL(void);
-void FOC_Usb_Receive(uint8_t *buf, uint32_t len);   /* 收一行数字 -> Speed_Ref */
-void FOC_Usb_Task(void);                            /* 主循环里调用：无换行也能断句 */
+void FOC_Usb_Receive(uint8_t *buf, uint32_t len);   /* 收一行 "速度[,Id]"，写 Ref_Speed / Id_Ref */
+void FOC_Usb_Task(void);                            /* 主循环里调用：400 ms 无换行也自动断句 */
 void OL_Init(void);
 void PWM_Count_Start(void);
 void Foc_PID_Init(void);
