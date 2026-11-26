@@ -50,11 +50,11 @@ const float IN_LOOP_FRE = 42500.0f;//电流环频率internal_loop_frequency
 const uint32_t IN_EX_DIV = 64;//内外环分频internal_external_division
 
 /*开环参数*/
-const float OL_Uq = 1.5f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
-const float OL_ACCE = 5.0f; //开环加速度open_loop_accelerate，单位rps/s
+const float OL_Uq = 0.8f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
+const float OL_ACCE = 10.0f; //开环加速度open_loop_accelerate，单位rps/s
 
 /*闭环参数*/
-const float CL_TH = 10.0f;   //切闭环阈值close_loop_threshood，单位rps
+const float CL_TH = 20.0f;   //切闭环阈值close_loop_threshood，单位rps
 const float CL_ACCE = 100.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调；负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
 
 
@@ -213,10 +213,9 @@ void Foc_PID_Init(void){
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
     const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
  
-    //PLL 参数初始化：ωn 取观测器带宽的 1/5，ζ=1（Lbg_Para_Update 每拍会刷新）
-    const float PLL_OMEGAn = Lbg_w0/5.0f;
+    const float PLL_OMEGAn = Lbg_w0/20.0f;
     Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
-    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;//Kp = 2ζωn，ζ=1
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.95f;//Kp = 2ζωn，ζ=0.95
 
     PID_Init(&Iq_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
     PID_Init(&Id_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
@@ -325,7 +324,7 @@ void Foc(void){
 
 
     JF_Push(Foc_Iabc.I_A, Foc_Iabc.I_B, Foc_Iabc.I_C,
-            Speed, Foc_Idq.I_D, Foc_Idq.I_Q);//JustFloat 遥测：Ia/Ib/Ic/Speed/Id/Iq，经 USB CDC 上传
+            Speed, Foc_Udq.U_D, Foc_Idq.I_Q);//JustFloat 遥测：Ia/Ib/Ic/Speed/Id/Iq，经 USB CDC 上传
 
     if(++Ex_Cnt<IN_EX_DIV)
     {
@@ -417,10 +416,10 @@ void Lbg_Para_Update(void){
     if(Lbg_w0<1000.0f)Lbg_w0=1000.0f;
     if(Lbg_w0>80000.0f)Lbg_w0=80000.0f;
 
-    //PLL 参数随笔速自适应：ωn = Lbg_w0/5，ζ=1
-    const float PLL_OMEGAn = Lbg_w0/5.0f;
-    Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
-    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;//Kp = 2ζωn，ζ=1
+    //PLL 参数随转速自适应：ωn = Lbg_w0/20，ζ=1
+    // const float PLL_OMEGAn = Lbg_w0/20.0f;
+    // Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
+    // Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.95f;//Kp = 2ζωn，ζ=0.95
 
 }
 
