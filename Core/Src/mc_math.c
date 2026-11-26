@@ -55,18 +55,21 @@ static float Sgn(float x){
 
 Eab_Typedef Smo(Uab_Typedef Uab, Iab_Typedef Iab)
 {
-    static float I_Alpha_Hat = 0.0f;   
+    static float I_Alpha_Hat = 0.0f;
     static float I_Beta_Hat  = 0.0f;
     static float Z_Alpha     = 0.0f;   
     static float Z_Beta      = 0.0f;
-    static float E_Alpha     = 0.0f;   
+    static float E_Alpha     = 0.0f;
     static float E_Beta      = 0.0f;
+
+    float err_alpha = I_Alpha_Hat-Iab.I_Alpha;
+    float err_beta  = I_Beta_Hat-Iab.I_Beta;
 
     I_Alpha_Hat += (Uab.U_Alpha - I_Alpha_Hat * PHASE_R - Z_Alpha)/ (PHASE_L * IN_LOOP_FRE);
     I_Beta_Hat  += (Uab.U_Beta - I_Beta_Hat * PHASE_R - Z_Beta)/ (PHASE_L * IN_LOOP_FRE);
 
-    Z_Alpha = Smo_K*Sgn(I_Alpha_Hat-Iab.I_Alpha);
-    Z_Beta  = Smo_K*Sgn(I_Beta_Hat-Iab.I_Beta);
+    Z_Alpha = Smo_K * err_alpha;
+    Z_Beta  = Smo_K * err_beta;
 
     E_Alpha = Smo_Filter * E_Alpha + (1.0f - Smo_Filter) * Z_Alpha;
     E_Beta  = Smo_Filter * E_Beta  + (1.0f - Smo_Filter) * Z_Beta;
@@ -79,28 +82,30 @@ Eab_Typedef Smo(Uab_Typedef Uab, Iab_Typedef Iab)
 
 }
 
-    float Lbg_w0 = 4000.0f;              /* 观测器带宽，rad/s，选的越大噪声越大滞后越小，反之亦然；这个参数建议自适应，否则只能保证低速或高速性能*/
-
+    extern float Lbg_w0;
+    
 Eab_Typedef Lbg(Uab_Typedef Uab, Iab_Typedef Iab){
 
     static float I_Alpha_Hat = 0.0f;
     static float I_Beta_Hat  = 0.0f;
-    static float E_Alpha     = 0.0f;   
+    static float E_Alpha     = 0.0f;
     static float E_Beta      = 0.0f;
 
     const float Lbg_K1 = 2.0f*Lbg_w0 - PHASE_R/PHASE_L;
     const float Lbg_K2 = -PHASE_L * Lbg_w0 * Lbg_w0;
 
-    /* 误差只算一次：先算误差，再同步更新电流和反电势。
-       以前是"半隐式"（先更新电流、再用新电流算 E 的误差），
-       会让实际极点与设计不符，高速时角度误差偏大。 */
     float err_alpha = Iab.I_Alpha - I_Alpha_Hat;
     float err_beta  = Iab.I_Beta  - I_Beta_Hat;
 
-    float dI_alpha = (Uab.U_Alpha - PHASE_R * I_Alpha_Hat - E_Alpha)
-                   / PHASE_L + Lbg_K1 * err_alpha;
-    float dI_beta  = (Uab.U_Beta  - PHASE_R * I_Beta_Hat  - E_Beta)
-                   / PHASE_L + Lbg_K1 * err_beta;
+    float dI_alpha =
+        (Uab.U_Alpha - PHASE_R * I_Alpha_Hat - E_Alpha)
+        / PHASE_L
+        + Lbg_K1 * err_alpha;
+
+    float dI_beta =
+        (Uab.U_Beta - PHASE_R * I_Beta_Hat - E_Beta)
+        / PHASE_L
+        + Lbg_K1 * err_beta;
 
     float dE_alpha = Lbg_K2 * err_alpha;
     float dE_beta  = Lbg_K2 * err_beta;
@@ -183,8 +188,8 @@ CCR_Typedef SVPWM(Uab_Typedef Uab, float Vbus)//不带死区补偿的SVPWM，一
 
 static float Dead_Gain(float i)//死区补偿
 {
-    const float I0 = 1.0f;   /* 死区最低阈值电流，低于该值不进行补偿，这两个参数需要自行调整，如果不需要死区补偿，可以忽略此函数*/
-    const float I1 = 2.0f;   /* 渐入结束，之后满补偿 */
+    const float I0 = 0.3f;   /* 死区最低阈值电流，低于该值不进行补偿，这两个参数需要自行调整，如果不需要死区补偿，可以忽略此函数*/
+    const float I1 = 0.8f;   /* 渐入结束，之后满补偿 */
 
     const float a = fabsf(i);
 

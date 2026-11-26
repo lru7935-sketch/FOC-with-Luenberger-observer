@@ -20,8 +20,8 @@
 /***********************手动配置****************************** */
 
 /*电机本体*/
-const float PHASE_R     = 2.55f;//相电阻
-const float PHASE_L     = 0.0009f;//相电感
+const float PHASE_R     = 33e-3f;//相电阻
+const float PHASE_L     = 2.5e-6f;//相电感
 const uint8_t POLE_PAIRS = 7;//极对数
 
 /*ADC采样*/
@@ -38,24 +38,24 @@ const float AMP_GAIN = 10.0f;//CSA倍率
 const float VBUS_DIV=4.0f;//母线采样分压
 
 /*PWM*/
-const float PWM_FRE = 21250.0f;//PWM频率
-const uint32_t PWM_ARR = (64000-1);//PWM自动重装值
+const float PWM_FRE = 42500.0f;//PWM频率
+const uint16_t PWM_ARR = (32000-1);//PWM自动重装值
 const uint16_t PWM_CCR_MIN = 40;//PWM最小比较值
 
 /*死区时间*/
-const uint16_t DEAD_TIME = 700U;//700ns，注意这里指的是实际死区时间（上管完全关断->下管完全打开），不是单片机这边配置的死区。
+const uint16_t DEAD_TIME = 600U;//700ns，注意这里指的是实际死区时间（上管完全关断->下管完全打开），不是单片机这边配置的死区。
 
 /*控制频率*/
-const float IN_LOOP_FRE = 21250.0f;//电流环频率internal_loop_frequency
-const uint32_t IN_EX_DIV = 32;//内外环分频internal_external_division
+const float IN_LOOP_FRE = 42500.0f;//电流环频率internal_loop_frequency
+const uint32_t IN_EX_DIV = 64;//内外环分频internal_external_division
 
 /*开环参数*/
-const float OL_Uq = 2.0f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
-const float OL_ACCE = 1.0f; //开环加速度open_loop_accelerate，单位rps/s
+const float OL_Uq = 1.5f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
+const float OL_ACCE = 5.0f; //开环加速度open_loop_accelerate，单位rps/s
 
 /*闭环参数*/
-const float CL_TH = 4.0f;   //切闭环阈值close_loop_threshood，单位rps
-const float CL_ACCE = 60.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调；负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
+const float CL_TH = 10.0f;   //切闭环阈值close_loop_threshood，单位rps
+const float CL_ACCE = 100.0f;//闭环最大加速度close_loop_accelerate，如果负载比较大，这个值不是很重要，可以往大调；负载如果比较小，或者电机转矩很大，可以设定该值对加速度做限制
 
 
 /***********************自动计算*******************************/
@@ -97,10 +97,7 @@ static float Speed =0.0f;       static float Omega_E = 0.0f;
 static float Angle_q = 0.0f;    static float sin_Angle_q = 0.0f;    static float cos_Angle_q = 0.0f;
 
 static float Ref_Speed = 0.0f;
-static volatile uint32_t Isr_Cyc_Max = 0U;
-static volatile uint32_t Isr_Cyc_Sum = 0U;
-static volatile uint32_t Isr_Cyc_Cnt = 0U;
-static volatile float Id_Ref = 0.0f;   /* Id axis current reference: USB sends "speed,Id" *///参考加速度，由外界给定，到达闭环以后，如果给的参考速度小于阈值，会把速度保持在阈值
+static volatile float Id_Ref = 0.0f;//参考加速度，由外界给定，到达闭环以后，如果给的参考速度小于阈值，会把速度保持在阈值
 static float Ref_Ramp = 0.0f;//速度备份,用于斜坡响应参考值
 static float Ref_Iq = 0.0f;//q轴参考电流，由速度环给定
 
@@ -123,7 +120,7 @@ static volatile uint16_t Adc_Buf_B[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_C[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_Vs[2];//第一个数据是母线电压采集，第二个是热敏电阻采集的温度信息，本代码中没有对温度进行处理，忽略第二个数据即可
 
-extern float Lbg_w0;
+float Lbg_w0 = 4000.0f;//不用改，下面会自适应
 
 void Foc_Vari_Reset(void){
 
@@ -181,40 +178,45 @@ void MOTOR_Init(void)
     HAL_Delay(20U);
 
     DRV_Init(DRV_MODE_PWM6);
-    DRV_Set_Idrivep(DRV_IDRIVEP_200MA);//栅极驱动电流，在mos不振铃的前提下大驱动电流能够缩短死区时间
+    DRV_Set_Idrivep(DRV_IDRIVEP_60MA);//栅极驱动电流，在mos不振铃的前提下大驱动电流能够缩短死区时间
 
     HAL_ADC_Start_DMA(&hadc1, (uint32_t *)Adc_Buf_B, ADC_BUF_LEN);
     HAL_ADC_Start_DMA(&hadc2, (uint32_t *)Adc_Buf_A, ADC_BUF_LEN);
     HAL_ADC_Start_DMA(&hadc3, (uint32_t *)Adc_Buf_C, ADC_BUF_LEN);
 
     Foc_PID_Init();//注意，这里面绝大多数参数会自己运算，除了速度环，因此建议自己调试速度环
-
-    /* TIM2: 10 MHz free running, 1 tick = 100 ns, used for ISR timing */
-    HAL_TIM_Base_Start(&htim2);
     Init_Cplt = 1;
 }
 
 void Foc_PID_Init(void){
 
-    //内环PI参数自适应，原理为零极点对消
+    //内环PI参数自适应，零极点对消
     const float IN_LOOP_Td     = 1.5f*1.0f/IN_LOOP_FRE;//延迟等于1.5个控制周期
-    //拿到延迟以后，配置相位裕度
-    const float IN_LOOP_OMEGAc = M_PI_F/(IN_LOOP_Td*6.0f);//选择60°相位裕度
+
+    const float Current_Loop_OmegaBW = M_TWOPI_F * PWM_FRE / 25.0f;
+
+    const float OmegaBW_mlp_Td = Current_Loop_OmegaBW*IN_LOOP_Td;
+
+    float sin_OmegaBW_mlp_Td,cos_OmegaBW_mlp_Td;
+
+    Cordic_Sin_Cos(OmegaBW_mlp_Td, &sin_OmegaBW_mlp_Td, &cos_OmegaBW_mlp_Td);
+
+    const float IN_LOOP_OmegaC = sqrtf(((Current_Loop_OmegaBW - sin_OmegaBW_mlp_Td)*(Current_Loop_OmegaBW - sin_OmegaBW_mlp_Td))
+    /(2.0f-cos_OmegaBW_mlp_Td*cos_OmegaBW_mlp_Td));
 
     //以下PI可以根据对消条件和带宽计算得到
-    const float IN_LOOP_kp     = PHASE_L*IN_LOOP_OMEGAc;
-    const float IN_LOOP_ki     = PHASE_R*IN_LOOP_OMEGAc;
+    const float IN_LOOP_kp     = PHASE_L*IN_LOOP_OmegaC;
+    const float IN_LOOP_ki     = PHASE_R*IN_LOOP_OmegaC;
     const float IN_LOOP_dt     = 1.0f/IN_LOOP_FRE;
 
     //SVPWM有效矢量最大为二分之根号三的母线，但是为保证采样质量，实际有效比例再×0.8（根据自己的硬件调整，如果噪声大，采样不太行就改小一点，流出消隐时间）
-    //也就是允许合成出的矢量最大为73.6%的母线电压
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
     const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
  
     //PLL参数自适应，原理是设计二阶系统的阻尼比和带宽
-    const float PLL_OMEGAn = Lbg_w0/20.0f;//PLL 带宽挂观测器，不再挂电流环
+    const float PLL_OMEGAn = Lbg_w0/5.0f;
     Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//这里把二阶系统的两个极点全部放到负实轴
-    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.707f;//阻尼比 0.707
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;
 
     PID_Init(&Iq_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
     PID_Init(&Id_Pid, IN_LOOP_kp, IN_LOOP_ki, 0.0f, IN_LOOP_dt, Valid_Ratio*IN_LOOP_OutAbs, -Valid_Ratio*IN_LOOP_OutAbs);
@@ -227,7 +229,7 @@ void Foc_PID_Init(void){
     然后上位机发送参考速度进行扫频，通过分析闭环系统在跟踪不同频率参考信号下的响应即可反推出系统开环传递函数
     得到开环传递函数以后可以进行仿真或者采用简单的零极点对消即可拿到速度环精确的kp，ki参数
     */
-    PID_Init(&Speed_Pid, 0.05f, 1.0f, 0.0f, 1.0f / EX_LOOP_FRE, 1.2f, -1.2f);
+    PID_Init(&Speed_Pid, 0.3f, 1.0f, 0.0f, 1.0f / EX_LOOP_FRE, 15.0f, -15.0f);
 
 }
 
@@ -319,8 +321,6 @@ void OL_Drv(void)
 
 void Foc(void){
 
-    const uint32_t _isr_t0 = TIM2->CNT;
-
     Foc_In_Loop();//执行电流环
 
 
@@ -329,14 +329,12 @@ void Foc(void){
 
     if(++Ex_Cnt<IN_EX_DIV)
     {
-        { uint32_t _d = TIM2->CNT - _isr_t0; Isr_Cyc_Sum += _d; Isr_Cyc_Cnt++; if(_d > Isr_Cyc_Max) Isr_Cyc_Max = _d; }
         return;
     }
     else{
         Foc_Ex_Loop();
         Ex_Cnt=0;
     }
-    { uint32_t _d = TIM2->CNT - _isr_t0; Isr_Cyc_Sum += _d; Isr_Cyc_Cnt++; if(_d > Isr_Cyc_Max) Isr_Cyc_Max = _d; }
 
 }
 
@@ -417,7 +415,12 @@ void Lbg_Para_Update(void){
 
     Lbg_w0=20.0f*Omega_E;//带宽选择20倍电角速度
     if(Lbg_w0<1000.0f)Lbg_w0=1000.0f;
-    if(Lbg_w0>50000.0f)Lbg_w0=50000.0f;
+    if(Lbg_w0>80000.0f)Lbg_w0=80000.0f;
+
+    //PLL参数自适应，设计二阶系统的阻尼比和带宽
+    const float PLL_OMEGAn = Lbg_w0/5.0f;
+    Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//这里把二阶系统的两个极点全部放到负实轴
+    Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*1.0f;
 
 }
 
@@ -671,35 +674,6 @@ static void FOC_Usb_Parse(void)
        USB: "L<percent>" e.g. L2 , L5 , L0
        Current path: Vbus -> A high side -> A winding -> B winding -> B low side -> shunt B
        Measures 2 x L_phase. C outputs are disabled so nothing shunts the current. */
-    if (Usb_Line[0] == 'c' || Usb_Line[0] == 'C')
-    {
-        char _b[96];
-        uint32_t mx = Isr_Cyc_Max, av = (Isr_Cyc_Cnt ? (Isr_Cyc_Sum / Isr_Cyc_Cnt) : 0U), nn = Isr_Cyc_Cnt;
-        int _k = sprintf(_b, "max=%lutick %lu.%luus avg=%lutick %lu.%luus n=%lu\r\n",
-            (unsigned long)mx, (unsigned long)(mx/10U), (unsigned long)(mx%10U),
-            (unsigned long)av, (unsigned long)(av/10U), (unsigned long)(av%10U),
-            (unsigned long)nn);
-        CDC_Transmit_FS((uint8_t*)_b, (uint16_t)_k);
-        Isr_Cyc_Max = 0U; Isr_Cyc_Sum = 0U; Isr_Cyc_Cnt = 0U;
-        return;
-    }    if (Usb_Line[0] == 'l' || Usb_Line[0] == 'L')
-    {
-        const float d_pct = strtof(&Usb_Line[1], &end);
-        CCR_Typedef cl;
-        const uint32_t cc = (uint32_t)((float)PWM_ARR * (d_pct / 100.0f));
-        Init_Cplt = 0;                  /* ISR does nothing */
-        Foc_EN    = 0;
-        PWM_Stop_ALL();
-        PWM_Start_ALL();
-        /* disable C phase outputs -> high impedance */
-        HAL_HRTIM_WaveformOutputStop(&hhrtim1, HRTIM_OUTPUT_TC1 | HRTIM_OUTPUT_TC2);
-        PWM_Count_Start();
-        cl.CCR_A = (uint16_t)cc;        /* A: PWM */
-        cl.CCR_B = 0;                   /* B: high side 0% -> low side always on */
-        cl.CCR_C = 0;
-        PWM_CCR_ALL(cl);
-        return;
-    }
     /* ---- SHUNT_TEST: fixed-duty injection for scope measurement ----
        USB: "t<percent>" e.g. t2 , t10 , t0
        A and B leg at <percent> duty, C leg at 0. FOC ISR is disabled so

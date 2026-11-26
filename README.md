@@ -2,23 +2,28 @@
 
 **核心特点：用线性观测器（Luenberger）替代滑模观测器（SMO），低速段性能显著更好。**
 
-> **TL;DR** — Hand-written **sensorless FOC** on **STM32G474 + DRV8340S**.
-> Uses a **linear (Luenberger) observer** instead of a sliding-mode observer.
+> **TL;DR** — Hand-written **sensorless FOC** on **STM32G474 + DRV8340S**,
+> targeting a **V2306 1950KV** drone motor (33 mΩ / 2.5 µH / 7 pole pairs).
 > A few hundred lines of float math, no vendor motor-control library.
 >
-> - Holds closed-loop down to **~1 rps (60 rpm)** under *ideal conditions*
->   (no load, accurate R/L); carries a hand-applied load up to **~40 rps (2400 rpm)**
-> - Angle error vs. an AS5600 magnetic encoder: **±3° @ 1 rps**
->   (the same motor, same gains, with an SMO: **±105°** — unusable below ~2 rps)
-> - 21.25 kHz current loop on a 170 MHz Cortex-M4, `sin/cos` done by the **G4 CORDIC**
-> - All PI gains derived analytically (pole-zero cancellation + phase margin), not trial-and-error
-> - 4-state machine with a **bumpless open-loop → closed-loop handover**
-> - ⚠️ **Research / hobby project, not production-ready.** No parameter identification
->   (R and L are measured by hand), speed loop still tuned manually, validated on a
->   single motor. See [已知限制与不足](#已知限制与不足).
+> - **42.5 kHz** current loop on a 170 MHz Cortex-M4, `sin/cos` by the **G4 CORDIC**
+> - No-load ceiling **~340 rps (20,400 rpm)** — set by the bus voltage, not the algorithm
+> - With a **5-inch H5146 prop** it runs stable at **~100 rps (6,000 rpm)**; above that
+>   the **15 A current limit** (fixed by the shunt + amplifier range) is the wall,
+>   not the voltage — there's still 40% bus headroom at that point
+> - Speed ripple at 50 rps: **σ = 0.014 rps (0.03%)**
+> - **Current sampling point follows the duty cycle** — without it, injecting `Id` inflates
+>   the measured `Iq` by **+275%** (pure measurement artifact, not physics); after the fix
+>   the real magnetic effect is only **+26%**
+> - All PI gains derived analytically (pole-zero cancellation + digital-delay compensation),
+>   not trial-and-error
+> - ⚠️ **Research / hobby project, not production-ready.** R and L measured by hand,
+>   speed loop tuned manually, validated on a single motor. See
+>   [已知限制与不足](#已知限制与不足).
 >
-> 中文一句话：用线性观测器把无感 FOC 的闭环下限从约 5 rps 拉到 **1 rps**，
-> 高速段带载到 **40 rps**；参数不是试出来的，是按零极点对消 + 相位裕度算出来的。
+> 中文一句话：**V2306 航模电机**上用 42.5 kHz 电流环跑无感 FOC —— 空载到 **340 rps**、
+> 带 5 寸桨稳定 **100 rps**、50 rps 时速度纹波只有 **0.03%**；
+> 参数不是试出来的，是按零极点对消 + 数字延迟补偿算出来的。
 
 ---
 
@@ -37,7 +42,7 @@
 | **⑦ 停机可重启** | 新增 `PWM_Count_Start()`：`PWM_Start_ALL()` 只开输出，不开计数器 | 修掉"发指令没反应"✓ |
 | **⑧ 电流采样点跟随占空比** | 原来固定在周期末尾（正好采在纹波谷底），改成 `(CCR_Max + PWM_ARR)/2`，取三相下管中点 | 加 `Id` 后 `Iq` 虚增 **275% → 26%** ✓ 电流读数从 0.45 A（假）变 5 A（真）✓ |
 | **⑨ 中断耗时实测** | TIM2（10 MHz，1 tick=100 ns）在 `Foc()` 首尾取计数，USB 发 `c` 查询 | 实测 **12.9 µs 平均 / 14.0 µs 最大**，40 kHz 仍有 40% 余量 ✓ |
-| **⑩ 调试接口** | `Id_Ref`（USB 发 `"速度,Id"`）、`L`/`t` 固定占空比注入、`c` 查询 | 弱磁 / 采样 / 死区实验都不用改代码重烧 ✓ |
+| **⑩ 调试接口** | `Id_Ref`（USB 发 `"速度,Id"`，做弱磁/饱和实验）、`t` 固定占空比注入（看死区和采样波形）| 这两类实验都不用改代码重烧 ✓ |
 | **⑪ 观测器改为同步离散化** | `Lbg()` 里先算出电流误差 `err`，再**用同一个 err** 同步更新 `Î` 和 `Ê` | 实际极点回到设计值，高速角度误差明显减小 ✓ |
 | **⑫ 观测器/PLL 带宽提高** | `Lbg_w0` 上限 `10000 → 50000`；`PLL_OMEGAn` 从挂电流环改为 `Lbg_w0/20`；`ζ` 取 0.707 | 300 rps 时 PLL 相位滞后从 ~88° 降到 ~55° ✓ |
 
@@ -74,8 +79,9 @@ const uint32_t ADC_Sample_Point = PWM_ARR * (1.0f - ADC_SAMPLE_RATIO);  // 周�
 
 ```
 纹波峰值 ΔI = Vbus·D(1-D)/(L·f)
-本项目 L=0.9 mH、15% 占空比 → ΔI ≈ 1.5 A（还能忍）
-换成 2.5 µH 的航模电机、同样占空比 → ΔI ≈ 14 A ✗
+
+换成 0.9 mH 的普通电机、15% 占空比 → ΔI ≈ 1.5 A（还能忍）
+本项目 2.5 µH 的航模电机、同样占空比 → ΔI ≈ 14 A ✗
 谷底比平均值低 7 A，电流读数直接失真
 ```
 
@@ -113,6 +119,9 @@ uint32_t _d = TIM2->CNT - _isr_t0;
 ```
 
 USB 发 `c` 即可读回 `max=...tick ...us avg=...tick ...us n=...`。
+
+> 这个 `c` 命令只存在于当时的调试分支，**没有并入开源主线** —— 它要在 ISR 里加两条
+> `TIM2->CNT` 读取，属于一次性测量手段。下面的数字就是用那个分支测出来的。
 
 **实测（170 MHz，含电流环 + 观测器 + PLL + 遥测 + 外环）**：
 
@@ -250,10 +259,10 @@ OL_Cplt     开环 → 闭环已经切换
 
 | G4 特性 | 是否使用 | 说明 |
 |---|---|---|
-| **HRTIM**（高分辨率定时器）| ✅ 用它产生 6 路 PWM | 21.25 kHz，`PWM_ARR = 64000-1`，靠主定时器比较值（MCMP1/2/3）改占空比；重复事件（MREP）触发控制中断 |
+| **HRTIM**（高分辨率定时器）| ✅ 用它产生 6 路 PWM | **42.5 kHz**，`PWM_ARR = 32000-1`，靠主定时器比较值（MCMP1/2/3）改占空比；重复事件（MREP）触发控制中断 |
 | **CORDIC**（硬件三角函数）| ✅ `sin/cos` | 2 结果模式，6 次迭代，全圈 16 点实测最大误差 `8.6e-7` |
 | **ADC ×4** | ✅ 三相低边电流 + 母线电压 | 12 bit，42.5 MHz，采样点由 HRTIM 比较值定位，保证下管导通窗口 |
-| **USB FS** | ✅ CDC 虚拟串口 | JustFloat 遥测，21 kHz × 28 B ≈ 600 kB/s（已接近 12 Mbit 上限）|
+| **USB FS** | ✅ CDC 虚拟串口 | JustFloat 遥测，**42.5 kHz × 28 B ≈ 1.19 MB/s** —— 已经吃满 12 Mbit 带宽，所以**不要在满速遥测时依赖串口命令回包**（会被 `USBD_BUSY` 丢掉）；要看波形就降速跑 |
 | **DMA** | ✅ ADC + USB | |
 | **FPU**（单精度）| ✅ 全程 float | ⚠️ 注意：newlib 里 `M_TWOPI` 是 **double**，误用会引入 `__adddf3`/`__divdf3` 软件浮点 |
 | **COMP ×7**（比较器）| ❌ 没用 | **这是最大的浪费** —— 可以用硬件做过流保护，也可以做无感六步换向的过零检测 |
@@ -280,22 +289,35 @@ RAM    17,544 B / 128 KB   (13%)
 
 | 项目 | 结果 |
 |---|---|
-| 最低无感闭环转速 | **约 1 rps（60 rpm）**，空载、理想条件下 |
-| 最高带载转速 | **约 40 rps（2400 rpm）**，手动加阻测试，非持续负载 |
-| 电流环频率 | 21.25 kHz |
-| 速度环频率 | 664 Hz（32 分频） |
-| 电流环跟踪误差 | ≤ 2 mA（给定 vs 反馈）|
-| 三相重构和 | \|Ia+Ib+Ic\| < 0.1 mA |
+| 空载最高转速 | **约 340 rps（20,400 rpm）** —— 受母线电压限制，不是算法限制 |
+| 带桨稳定转速 | **约 100 rps（6,000 rpm）**，5 寸 H5146 桨；再高就撞 **15 A 电流限幅**（由采样量程决定），此时母线电压还剩 40% 余量 |
+| 电流环频率 | **42.5 kHz** |
+| 速度环频率 | 664 Hz（64 分频）|
 | **中断耗时** | **12.9 µs 平均 / 14.0 µs 最大**（170 MHz，含观测器 + PLL + 遥测 + 外环）|
-| **中断 CPU 占用** | 21.25 kHz 下 27%；40 kHz 下 51%（留 40% 余量）|
-| **速度稳定性** | 50 rps 时 **σ = 0.014 rps（0.03%）**；20 rps 时 σ = 0.09 rps |
+| **中断 CPU 占用** | 42.5 kHz 下约 **55%**（还有余量，理论上限约 47 kHz）|
+| **速度稳定性** | 50 rps 时 **σ = 0.014 rps（0.03%）** |
 | **相电流噪声** | 50 rps 空载 **σ = 0.47 A**（修正采样点 + 电流环带宽归一后）|
-| 切换瞬间掉速 | **0 rps**（承接 + 3 A 限幅后，在另一台低阻电机上实测；本电机未复测）|
+| 电流采样点 | 跟随占空比，取三相下管中点 `(CCR_Max + PWM_ARR)/2` |
 
-> **测试条件**：单台电机（Rs=2.55 Ω / Ls=0.9 mH / 7 对极）、母线 12 V、室温、空载或手动摩擦加载。
-> 这些数字说明"能跑成什么样"，不代表换一台电机、换一套硬件也能复现同样的下限。
+> **测试条件**：单台 **V2306 1950KV**（Rs=33 mΩ / Ls=2.5 µH / 7 对极）、母线 12 V、室温、空载或 5 寸桨加载。
+> 这些数字说明"能跑成什么样"，不代表换一台电机、换一套硬件也能复现同样的上下限。
+
+**两个上限，分清是哪一种**：
+
+```
+空载 340 rps  → 电压撑出来的（反电势 ≈ 母线可用电压）
+带桨 100 rps  → 电流撑出来的（15 A 限幅，采样量程的硬限制）
+```
+
+**要往上走的话**：空载那条只能提母线电压；带载那条要换更小的采样电阻或更大功率级，
+**跟算法无关**。
 
 ## 为什么用线性观测器
+
+> ⚠️ **这一节的对比是在早期那台高电感电机上做的**（Rs=2.55 Ω / Ls=0.9 mH），
+> 不是现在这台的 V2306。留在这里是为了说明"低速段为什么线性观测器更合适"，
+> 但**数值不能直接外推到航模电机上** —— 航模电机电感小两个数量级，低速反电势更小，
+> 实际能用到的下限主要受电流采样噪声和死区误差限制。
 
 同一套硬件、同一个电机、同样的 PI 参数下，对比两种观测器的**角度误差**
 （用手持磁编码器 AS5600 作真值）：
@@ -324,11 +346,12 @@ RAM    17,544 B / 128 KB   (13%)
 |---|---|
 | MCU | STM32G474RBT3（170 MHz, CORDIC/FMAC, HRTIM）|
 | 栅极驱动 | DRV8340S（SPI 配置，内部死区）|
-| 电流采样 | 3× 低边 10 mΩ + 差分放大 ×10 |
+| 电流采样 | 3× 低边 10 mΩ + 差分放大 ×10（量程 ±16.5 A，实际限幅 15 A）|
 | 母线电压采样 | 4:1 分压 |
 | 编码器（调试用）| AS5600，I2C DMA，12 bit |
-| 电机 | 相电阻 2.55 Ω，相电感 0.9 mH，7 对极 |
+| 电机 | **V2306 1950KV**（相电阻 33 mΩ，相电感 2.5 µH，7 对极）|
 | 母线 | 12 V |
+| 负载 | 5 寸桨 **H5146**（带载测试用）|
 
 ## 代码结构
 
@@ -398,10 +421,27 @@ L0 / t0  -> 占空比归零（退出调试前先发这个）
 
 本项目的 PI 参数不是试出来的，按下面三步算出来：
 
-1. **零极点对消定比值**：`Ki/Kp = R/L`（实际用了 1.5×R/L，多一点相位超前）
+1. **零极点对消定比值**：`Ki/Kp = R/L`（代码里 `IN_LOOP_ki = PHASE_R*ωc`、`IN_LOOP_kp = PHASE_L*ωc`）
 2. **穿越频率定增益**：`Kp = ωc·L`，`Ki = ωc·R`
-3. **ωc 由相位裕度反推**：`ωc = π/(6·Td)` 对应 PM=60°，其中 `Td` 是
-   "采样到更新占空比"的延时（约 1.5 个控制周期，含零保持）
+3. **ωc 由目标带宽 + 数字延迟反推**
+
+第 3 步现在是**解析求解**，不再是手算近似：
+
+```c
+const float Current_Loop_OmegaBW = M_TWOPI_F * PWM_FRE / 25.0f;   // 目标带宽 rad/s
+const float OmegaBW_mlp_Td = Current_Loop_OmegaBW * IN_LOOP_Td;
+Cordic_Sin_Cos(OmegaBW_mlp_Td, &sin_wTd, &cos_wTd);
+
+// 把 e^{-sTd} 的相位滞后代入闭环特征方程，解出实际穿越频率 ωc
+const float IN_LOOP_OmegaC = sqrtf(
+    ((OmegaBW - sin_wTd)*(OmegaBW - sin_wTd)) / (2.0f - cos_wTd*cos_wTd));
+```
+
+其中 `IN_LOOP_Td = 1.5 / IN_LOOP_FRE`（采样到占空比生效约 1.5 个控制周期，含零阶保持）。
+
+**为什么不用 `ωc = π/(6·Td)`**：那是"纯延迟 + 60° 相位裕度"的粗略近似。
+实际被控对象是 `1/(R+Ls)` 串一个 `e^{-sTd}`，幅值和相位都随频率变，
+直接解方程比估算准，而且**换 PWM 频率时不用重新手调**。
 
 详见 [docs/调参方法.md](docs/调参方法.md)。
 
@@ -421,9 +461,12 @@ L0 / t0  -> 占空比归零（退出调试前先发这个）
 - 没有自整定，也没有摩擦 / 齿槽转矩补偿
 
 **开环到闭环的承接是折中，不是最优**
-- 开环（I-f 强拖）的电流远大于稳态需求，切换时"承接多少"本质是个取舍：
-  承接多了会冲、承接少了会掉，本项目的 3 A 限幅只是一个折中点
-- 真正的解法是**开环也做电流闭环（I-f with current control）**，
+- 开环（V/f 强拖）的电流远大于稳态需求 —— 本项目 `OL_Uq = 1.5 V` 砸在 33 mΩ 上，
+  实测开环末期 `Iq` 会到 **28 A**，而 20 rps 稳态只要 1.8 A
+- 切换时"承接多少"本质是个取舍：承接多了会冲、承接少了会掉。
+  现在用的是**等效阶跃**（`Inte = Speed·Kp/Ki`，即切换瞬间给 `Ref_Iq = Speed·Kp`），
+  比直接承接开环电流温和得多（实测超调 45% vs 221%）
+- 真正的解法是**开环也做电流闭环（I/f with current control）**，
   让切换两侧电流本来就接近，这是后续要做的事
 
 **验证范围有限**
@@ -432,11 +475,14 @@ L0 / t0  -> 占空比归零（退出调试前先发这个）
 - 带载能力是"用手捏"测出来的，没有标准负载台架
 
 **其他**
-- 低速下限依赖负载和惯量：空载约 1 rps，带载时明显升高；1 rps 以下反电势过小会丢锁
+- 低速下限依赖负载和惯量：现在这版开环切闭环阈值 `CL_TH = 10 rps`，
+  低于这个值仍由开环强拖；**10 rps 以下无感闭环在这台航模电机上没有验证过**
 - 无感不能从零速启动，必须先用开环把电机拖起来再切闭环
-- 死区补偿在本电机（2.55 Ω）上收益小于风险，代码里是**关闭**的
+- 死区补偿在本机上是**关闭**的 —— 42.5 kHz 下死区占比 2.98%（700 ns），
+  理论死区电压误差约 0.71 V，但补偿引入的相电流过零畸变风险更大，暂时不开
 - 电压输出必须留余量（`Valid_Ratio`），否则下管采样窗口消失、电流采样失效
-- ISR 耗时 18.4 µs 是换 CORDIC **之前**的测量值，换之后未复测
+- **电流采样量程是硬限制**：10 mΩ + ×10 → ±16.5 A，软件限幅 15 A。
+  想要更大转矩只能改硬件，不是调参数能解决的
 - 编码器只用于调试和验证，不是产品功能
 - 没有实现弱磁；SPMSM 下 Id=0 已是最优，但换成 IPMSM 就缺 MTPA 这块
 - **COMP 完全没用**：没有硬件过流保护，也没有六步换向的过零检测
