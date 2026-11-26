@@ -50,7 +50,7 @@ const float IN_LOOP_FRE = 42500.0f;//电流环频率internal_loop_frequency
 const uint32_t IN_EX_DIV = 64;//内外环分频internal_external_division
 
 /*开环参数*/
-const float OL_Uq = 0.8f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
+const float OL_Uq = 1.2f;  //开环的q轴电压，按需调整，这里给默认值，必须确保你给的电压能支持下面这个加速度
 const float OL_ACCE = 10.0f; //开环加速度open_loop_accelerate，单位rps/s
 
 /*闭环参数*/
@@ -114,13 +114,16 @@ static float Ref_Iq = 0.0f;//q轴参考电流，由速度环给定
     Pid_Typedef    Id_Pid;
     Pid_Typedef    Speed_Pid;
 
+    Pid_Typedef    OL_Iq_Pid;
+    Pid_Typedef    OL_Id_Pid;
+
 #define ADC_BUF_LEN 1//电流采样ADC缓冲区数组长度
 static volatile uint16_t Adc_Buf_A[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_B[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_C[ADC_BUF_LEN];
 static volatile uint16_t Adc_Buf_Vs[2];//索引0是热敏电阻温度，索引1是母线电压；本代码不处理温度，忽略索引0即可
 
-float Lbg_w0 = 4000.0f;//不用改，下面会自适应
+float Lbg_w0 = 5000.0f;//不用改，下面会自适应
 
 void Foc_Vari_Reset(void){
 
@@ -138,7 +141,7 @@ void Foc_Vari_Reset(void){
     Ref_Ramp = 0.0f;
     Ref_Iq = 0.0f;
 
-    Lbg_w0=4000.0f;
+    Lbg_w0=5000.0f;
     Pll_Reset(&Pll_Lbg);
 
     Foc_Iab.I_Alpha=0.0f;
@@ -209,11 +212,11 @@ void Foc_PID_Init(void){
     const float IN_LOOP_ki     = PHASE_R*IN_LOOP_OmegaC;
     const float IN_LOOP_dt     = 1.0f/IN_LOOP_FRE;
 
-    //SVPWM有效矢量最大为二分之根号三的母线，但为保证采样质量，实际有效比例再×0.8（按硬件调整：噪声大或采样窗口不够就改小，留出消隐时间）
+    //SVPWM有效矢量最大为二分之根号三的母线，但为保证采样质量，实际有效比例再×0.9（按硬件调整：噪声大或采样窗口不够就改小，留出消隐时间）
     const float IN_LOOP_OutAbs = Get_Vbus()*sqrtf(3)/2.0f;
-    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.8f;
+    const float Valid_Ratio    = (1.0f-DEAD_RATIO-ADC_SAMPLE_RATIO)*0.85f;
  
-    const float PLL_OMEGAn = Lbg_w0/20.0f;
+    const float PLL_OMEGAn = Lbg_w0/5.0f;
     Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
     Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.95f;//Kp = 2ζωn，ζ=0.95
 
@@ -228,7 +231,7 @@ void Foc_PID_Init(void){
     然后上位机发送参考速度进行扫频，通过分析闭环系统在跟踪不同频率参考信号下的响应即可反推出系统开环传递函数
     得到开环传递函数以后可以进行仿真或者采用简单的零极点对消即可拿到速度环精确的kp，ki参数
     */
-    PID_Init(&Speed_Pid, 0.3f, 1.0f, 0.0f, 1.0f / EX_LOOP_FRE, 15.0f, -15.0f);
+    PID_Init(&Speed_Pid, 0.2f, 0.5f, 0.0f, 1.0f / EX_LOOP_FRE, 15.0f, -15.0f);
 
 }
 
@@ -286,7 +289,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t gpio_pin)
 /*********************************开环***********************************/
 void OL_Init(void){
 
-    Foc_Uab.U_Beta=-OL_Uq;//电压矢量固定在270°：对齐后转子d轴在270°，q轴落在A相（0°）
+    Foc_Uab.U_Beta=-2.0f;//电压矢量固定在270°：对齐后转子d轴在270°，q轴落在A相（0°）
     Foc_Uab.U_Alpha=0;
 
     CCR_Typedef CCR=SVPWM(Foc_Uab, Get_Vbus());
@@ -302,16 +305,16 @@ void OL_Drv(void)
 
     OL_Angle_q+=OL_Speed*M_TWOPI_F*POLE_PAIRS/IN_LOOP_FRE;
 
-    float sin_OL_Angle_q = 0.0f;
-    float cos_OL_Angle_q = 0.0f;
-
     if(OL_Angle_q>M_TWOPI_F)OL_Angle_q-=M_TWOPI_F;//归一化
     if(OL_Angle_q<0)OL_Angle_q+=M_TWOPI_F;
 
-    Foc_Udq.U_D=0.0f;
-    Foc_Udq.U_Q = OL_Uq;
+        Foc_Udq.U_D = 0.0f;
+        Foc_Udq.U_Q = OL_Uq;
 
+    float sin_OL_Angle_q = 0.0f;
+    float cos_OL_Angle_q = 0.0f;
     Cordic_Sin_Cos(OL_Angle_q, &sin_OL_Angle_q, &cos_OL_Angle_q);
+
     Foc_Uab=Arc_Park(Foc_Udq, sin_OL_Angle_q, cos_OL_Angle_q);
 
 }
@@ -324,7 +327,7 @@ void Foc(void){
 
 
     JF_Push(Foc_Iabc.I_A, Foc_Iabc.I_B, Foc_Iabc.I_C,
-            Speed, Foc_Udq.U_D, Foc_Idq.I_Q);//JustFloat 遥测：Ia/Ib/Ic/Speed/Id/Iq，经 USB CDC 上传
+            Speed, Foc_Udq.U_D, Foc_Udq.U_Q);//JustFloat 遥测：Ia/Ib/Ic/Speed/Id/Iq，经 USB CDC 上传
 
     if(++Ex_Cnt<IN_EX_DIV)
     {
@@ -381,6 +384,7 @@ void Foc_In_Loop(void)
         {
             OL_Cplt = 1;
             Ref_Ramp = Speed;
+            Ref_Iq = Foc_Idq.I_Q;
             Speed_Pid.Inte = Speed * Speed_Pid.Kp /Speed_Pid.Ki;
         }
 
@@ -412,14 +416,9 @@ void Foc_Ex_Loop(void)
 /*****************参数自适应*******************/
 void Lbg_Para_Update(void){
 
-    Lbg_w0=20.0f*Omega_E;//带宽选择20倍电角速度
+    Lbg_w0=10.0f*Omega_E;
     if(Lbg_w0<1000.0f)Lbg_w0=1000.0f;
     if(Lbg_w0>80000.0f)Lbg_w0=80000.0f;
-
-    //PLL 参数随转速自适应：ωn = Lbg_w0/20，ζ=1
-    // const float PLL_OMEGAn = Lbg_w0/20.0f;
-    // Pll_Lbg.Pll_Ki = PLL_OMEGAn*PLL_OMEGAn;//Ki = ωn²
-    // Pll_Lbg.Pll_Kp = 2.0f*PLL_OMEGAn*0.95f;//Kp = 2ζωn，ζ=0.95
 
 }
 
