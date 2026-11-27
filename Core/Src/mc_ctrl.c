@@ -172,6 +172,26 @@ void Foc_Vari_Reset(void){
 void MOTOR_Init(void)
 {
 
+        if (HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+        if (HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+        if (HAL_ADCEx_Calibration_Start(&hadc3, ADC_SINGLE_ENDED) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+        if (HAL_ADCEx_Calibration_Start(&hadc4, ADC_SINGLE_ENDED) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
     PWM_Count_Start();//先打开计数，如果不开的话ADC没法触发（对于STM32G4的HRTIM是这样的）
     //打开的话中断也会同时触发，由于我们还未初始化完成，这里使用Init_Cplt这个变量先屏蔽中断内容
 
